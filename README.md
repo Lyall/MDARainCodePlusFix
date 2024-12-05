@@ -2,7 +2,7 @@
 [![Patreon-Button](https://raw.githubusercontent.com/Lyall/MDARainCodePlusFix/refs/heads/master/.github/Patreon-Button.png)](https://www.patreon.com/Wintermance) [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/W7W01UAI9)<br />
 [![Github All Releases](https://img.shields.io/github/downloads/Lyall/MDARainCodePlusFix/total.svg)](https://github.com/Lyall/MDARainCodePlusFix/releases)
 
-This is an ASI plugin for Master Detective Archives: Rain Code Plus that adds ultrawide/narrower support, enables the console and much more.
+This is an ASI plugin for Master Detective Archives: Rain Code Plus that adds ultrawide/narrower support, skips intro logos and more.
 
 ## Features
 ### General
