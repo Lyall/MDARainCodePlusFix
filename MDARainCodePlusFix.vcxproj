@@ -32,6 +32,7 @@
     <ClCompile Include="src\SDK\CoreUObject_functions.cpp" />
     <ClCompile Include="src\SDK\CriWareRuntime_functions.cpp" />
     <ClCompile Include="src\SDK\Engine_functions.cpp" />
+    <ClCompile Include="src\SDK\RC_functions.cpp" />
     <ClCompile Include="src\SDK\UMG_functions.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

@@ -4,6 +4,10 @@
 #include "SDK/Engine_classes.hpp"
 #include "SDK/UMG_classes.hpp"
 #include "SDK/movieUMG_classes.hpp"
+#include "SDK/Caution_P_classes.hpp"
+#include "SDK/UELogo_P_classes.hpp"
+#include "SDK/CRILogo_P_classes.hpp"
+#include "SDK/AutoSaveCaution_P_classes.hpp"
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
@@ -215,7 +219,49 @@ void UpdateOffsets()
 
 void IntroSkip() 
 {
+    if (bSkipLogos) {
+        // Intro skip
+        std::uint8_t* IntroSkipScanResult = Memory::PatternScan(exeModule, "E8 ?? ?? ?? ?? 84 ?? 75 ?? 33 ?? 48 8B ?? E8 ?? ?? ?? ?? 48 8B ?? ?? ?? ?? ?? 48 85 ?? 74 ??");
+        if (IntroSkipScanResult) {
+            spdlog::info("Intro Skip: Address is {:s}+{:x}", sExeName.c_str(), IntroSkipScanResult - (std::uint8_t*)exeModule);
+            static SafetyHookMid IntroSkipMidHook{};
+            IntroSkipMidHook = safetyhook::create_mid(IntroSkipScanResult,
+                [](SafetyHookContext& ctx) {
+                    for (int i = 0; i < SDK::UObject::GObjects->Num(); i++) {
+                        SDK::UObject* Obj = SDK::UObject::GObjects->GetByIndex(i);
 
+                        if (!Obj || Obj->IsDefaultObject() || !Obj->HasTypeFlag(SDK::EClassCastFlags::Actor))
+                            continue;
+
+                        const std::string ObjName = Obj->GetName();
+
+                        if (ObjName.contains("Caution_P_C")) {
+                            auto caution = (SDK::ACaution_P_C*)Obj;
+                            caution->isFinish = true;
+                        }
+                        
+                        if (ObjName.contains("UELogo_P_C")) {
+                            auto ue = (SDK::AUELogo_P_C*)Obj;
+                            ue->isFinish = true;
+                        }
+                        
+                        if (ObjName.contains("CRILogo_P_C")) {
+                            auto cri = (SDK::ACRILogo_P_C*)Obj;
+                            cri->isFinish = true;
+                        }
+                        
+                        if (ObjName.contains("AutoSaveCaution_P_C")) {
+                            auto autosave = (SDK::AAutoSaveCaution_P_C*)Obj;
+                            autosave->isFinish = true;
+                        }
+                        
+                    }
+                });
+        }
+        else {
+            spdlog::error("Intro Skip: Pattern scan failed.");
+        }
+    } 
 }
 
 void CurrentResolution()
@@ -318,8 +364,9 @@ void HUD()
                         SDK::URCManaComponent* RCMovie = (SDK::URCManaComponent*)ctx.rcx;
                         if (RCMovie->GetSource()->GetUrl().ToString().contains("OP_Logo.usm")) {
                             RCMovie->Stop();
-                            spdlog::info("Skip Logos: Skipped logos movie.");
+                            spdlog::info("Intro Skip: Skipped logos movie.");
                             bSkippedLogosMovie = true;
+                            return;
                         }
                     }
 
