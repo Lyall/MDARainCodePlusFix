@@ -29,7 +29,7 @@ e.g. ("**steamapps\common\MDA - RAIN CODE Plus**" for Steam).
 
 ## Screenshots
 
-|  |
+| ![ezgif-6-30b9b4d983](https://github.com/user-attachments/assets/1f1dea0b-6888-4ab8-8984-a6a969db46db) |
 |:--------------------------:|
 | Gameplay |
 
