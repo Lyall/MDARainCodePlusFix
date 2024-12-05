@@ -41,11 +41,9 @@ float fHUDHeight;
 float fHUDHeightOffset;
 
 // Ini variables
-bool bFixAspect = true;
-bool bFixHUD = true;
-bool bEnableConsole = false;
-bool bApplyCVars = false;
-std::vector<std::pair<std::string, std::string>> sCVars;
+bool bFixAspect;
+bool bFixHUD;
+bool bEnableConsole;
 
 // Variables
 int iCurrentResX;
@@ -54,7 +52,6 @@ int iOldResX;
 int iOldResY;
 SDK::UEngine* Engine = nullptr;
 SDK::UInputSettings* InputSettings = nullptr;
-std::set<std::string> loggedCVars;
 
 void Logging()
 {
@@ -124,20 +121,11 @@ void Configuration()
     inipp::get_value(ini.sections["Fix Aspect Ratio"], "Enabled", bFixAspect);
     inipp::get_value(ini.sections["Fix HUD"], "Enabled", bFixHUD);
     inipp::get_value(ini.sections["Developer Console"], "Enabled", bEnableConsole);
-    inipp::get_value(ini.sections["Apply CVars"], "Enabled", bApplyCVars);
-    auto it = ini.sections.find("CVars");
-    if (it != ini.sections.end())
-        for (const auto& pair : it->second)
-            sCVars.emplace_back(pair.first, pair.second);
 
     // Log ini parse
     spdlog_confparse(bFixAspect);
     spdlog_confparse(bFixHUD);
     spdlog_confparse(bEnableConsole);
-    spdlog_confparse(bApplyCVars);
-    for (const auto& cvar : sCVars)
-        spdlog::info("Config Parse: sCVars: {} = {}", cvar.first, cvar.second);
-
     spdlog::info("----------");
 }
 
@@ -324,46 +312,21 @@ void HUD()
             static SafetyHookMid HUDMarkersMidHook{};
             HUDMarkersMidHook = safetyhook::create_mid(HUDMarkersScanResult,
                 [](SafetyHookContext& ctx) {
-                    // Remove offsets
+                    // Get width and height
+                    int iResX = (int)ctx.rdx & 0xFFFFFFFF;
+                    int iResY = (int)static_cast<uint32_t>(ctx.rdx >> 32);
+
+                    // Remove hor/vert offsets
                     ctx.xmm2.f32[0] = ctx.xmm5.f32[0] = 0.00f;
+
+                    // Set width and height
+                    ctx.xmm0.f32[0] = (float)iResX;
+                    ctx.xmm4.f32[0] = (float)iResY;
+
                 });
         }
         else {
             spdlog::error("HUD: Interaction Markers: Pattern scan failed.");
-        }
-    }
-}
-
-void Miscellaneous()
-{
-    if (bApplyCVars) {
-        // ULevelSequence::PostLoad()
-        std::uint8_t* LevelSequencePostLoadScanResult = Memory::PatternScan(exeModule, "4C ?? ?? 55 53 48 8B ?? 48 83 ?? ?? F6 ?? ?? 01 48 8B ?? 0F 84 ?? ?? ?? ??");
-        if (LevelSequencePostLoadScanResult) {
-            spdlog::info("Apply CVars: Address is {:s}+{:x}", sExeName.c_str(), LevelSequencePostLoadScanResult - (std::uint8_t*)exeModule);
-            static SafetyHookMid LevelSequencePostLoadMidHook{};
-            LevelSequencePostLoadMidHook = safetyhook::create_mid(LevelSequencePostLoadScanResult - 0x10,
-                [](SafetyHookContext& ctx) {
-                    // Apply cvars from ini
-                    for (const auto& cvar : sCVars) {
-                        const std::string& cvarName = cvar.first;
-                        const std::string& cvarValue = cvar.second;
-
-                        std::wstringstream wss;
-                        wss << std::wstring(cvarName.begin(), cvarName.end()) << L" " << std::wstring(cvarValue.begin(), cvarValue.end());
-                        std::wstring command = wss.str();
-
-                        SDK::UKismetSystemLibrary::ExecuteConsoleCommand(nullptr, command.c_str(), nullptr);
-
-                        if (loggedCVars.find(cvarName) == loggedCVars.end()) {
-                            spdlog::info("Apply CVars: Set {} = {}", cvar.first, cvar.second);
-                            loggedCVars.insert(cvarName);
-                        }
-                    }
-                });
-        }
-        else {
-            spdlog::error("Apply CVars: Pattern scan failed.");
         }
     }
 }
@@ -439,7 +402,6 @@ DWORD __stdcall Main(void*)
     CurrentResolution();
     AspectRatioFOV();
     HUD();
-    Miscellaneous();
     EnableConsole();
     return true;
 }
