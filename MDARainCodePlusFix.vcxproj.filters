@@ -50,7 +50,7 @@
     <ClCompile Include="src\SDK\UMG_functions.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\SDK\RC_functions.cpp">
+    <ClCompile Include="src\SDK\CriWareRuntime_functions.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

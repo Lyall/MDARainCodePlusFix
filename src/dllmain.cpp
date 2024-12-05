@@ -45,6 +45,7 @@ float fHUDHeightOffset;
 bool bFixAspect;
 bool bFixHUD;
 bool bEnableConsole;
+bool bSkipLogos;
 
 // Variables
 int iCurrentResX;
@@ -53,6 +54,7 @@ int iOldResX;
 int iOldResY;
 SDK::UEngine* Engine = nullptr;
 SDK::UInputSettings* InputSettings = nullptr;
+bool bSkippedLogosMovie = false;
 
 void Logging()
 {
@@ -119,14 +121,16 @@ void Configuration()
     spdlog::info("----------");
 
     // Load settings from ini
+    inipp::get_value(ini.sections["Skip Logos"], "Enabled", bSkipLogos);
+    inipp::get_value(ini.sections["Developer Console"], "Enabled", bEnableConsole);
     inipp::get_value(ini.sections["Fix Aspect Ratio"], "Enabled", bFixAspect);
     inipp::get_value(ini.sections["Fix HUD"], "Enabled", bFixHUD);
-    inipp::get_value(ini.sections["Developer Console"], "Enabled", bEnableConsole);
 
     // Log ini parse
+    spdlog_confparse(bSkipLogos);
+    spdlog_confparse(bEnableConsole);
     spdlog_confparse(bFixAspect);
     spdlog_confparse(bFixHUD);
-    spdlog_confparse(bEnableConsole);
     spdlog::info("----------");
 }
 
@@ -209,6 +213,11 @@ void UpdateOffsets()
     }
 }
 
+void IntroSkip() 
+{
+
+}
+
 void CurrentResolution()
 {
     // Grab desktop resolution/aspect just in case
@@ -238,7 +247,6 @@ void CurrentResolution()
         spdlog::error("Current Resolution: Pattern scan failed.");
     }
 }
-
 
 void AspectRatioFOV()
 {
@@ -294,51 +302,66 @@ void HUD()
         }
         else {
             spdlog::error("HUD: Interaction Markers: Pattern scan failed.");
-        }
+        } 
+    }
 
+    if (bFixHUD || bSkipLogos) {
         // Movies - ManaComponent::IsPreparing()
         std::uint8_t* MoviePrepareScanResult = Memory::PatternScan(exeModule, "48 83 ?? ?? ?? ?? ?? 00 75 ?? 32 ?? C3 0F B6 ?? ?? ?? ?? ??");
         if (MoviePrepareScanResult) {
             spdlog::info("Movies: Prepare: Address is {:s}+{:x}", sExeName.c_str(), MoviePrepareScanResult - (std::uint8_t*)exeModule);
             static SafetyHookMid MoviePrepareMidHook{};
             MoviePrepareMidHook = safetyhook::create_mid(MoviePrepareScanResult,
-                [](SafetyHookContext& ctx) {   
-                    for (int i = 0; i < SDK::UObject::GObjects->Num(); i++) {
-                        SDK::UObject* Obj = SDK::UObject::GObjects->GetByIndex(i);
+                [](SafetyHookContext& ctx) {
+                    // Skip logo movie once
+                    if (bSkipLogos && !bSkippedLogosMovie) {
+                        SDK::URCManaComponent* RCMovie = (SDK::URCManaComponent*)ctx.rcx;
+                        if (RCMovie->GetSource()->GetUrl().ToString().contains("OP_Logo.usm")) {
+                            RCMovie->Stop();
+                            spdlog::info("Skip Logos: Skipped logos movie.");
+                            bSkippedLogosMovie = true;
+                        }
+                    }
 
-                        if (!Obj || Obj->IsDefaultObject())
-                            continue;
+                    if (bFixHUD) {
+                        // This is an expensive operation but it only runs once as a movie begins playback
+                        for (int i = 0; i < SDK::UObject::GObjects->Num(); i++) {
+                            SDK::UObject* Obj = SDK::UObject::GObjects->GetByIndex(i);
 
-                        if (Obj->IsA(SDK::UmovieUMG_C::StaticClass())) {
-                            // Assign UMGMovie
-                            SDK::UmovieUMG_C* UMGMovie = (SDK::UmovieUMG_C*)Obj;
-                            spdlog::info("HUD: Movies: Prepare: Movie playback started.");
+                            if (!Obj || Obj->IsDefaultObject())
+                                continue;
 
-                            // Get RootWidget
-                            SDK::UPanelWidget* rootWidget = (SDK::UPanelWidget*)UMGMovie->WidgetTree->RootWidget;
+                            if (Obj->IsA(SDK::UmovieUMG_C::StaticClass())) {
+                                // Assign UMGMovie
+                                SDK::UmovieUMG_C* UMGMovie = (SDK::UmovieUMG_C*)Obj;
+                                spdlog::info("HUD: Movies: Prepare: Movie playback started.");
 
-                            // Create background image
-                            SDK::UObject* imgObj = SDK::UGameplayStatics::SpawnObject(SDK::UImage::StaticClass(), SDK::UImage::StaticClass()->Outer);
-                            SDK::UImage* bgImg = static_cast<SDK::UImage*>(imgObj);
+                                // Get RootWidget
+                                SDK::UPanelWidget* rootWidget = (SDK::UPanelWidget*)UMGMovie->WidgetTree->RootWidget;
 
-                            // Set brush to black
-                            bgImg->Brush.TintColor = SDK::FSlateColor(SDK::FLinearColor(0.00f, 0.00f, 0.00f, 1.00f));
+                                // Create background image
+                                SDK::UObject* imgObj = SDK::UGameplayStatics::SpawnObject(SDK::UImage::StaticClass(), SDK::UImage::StaticClass()->Outer);
+                                SDK::UImage* bgImg = static_cast<SDK::UImage*>(imgObj);
 
-                            // Add background image widget as child of root widget
-                            rootWidget->AddChild(bgImg);
+                                // Set brush to black
+                                bgImg->Brush.TintColor = SDK::FSlateColor(SDK::FLinearColor(0.00f, 0.00f, 0.00f, 1.00f));
 
-                            // Fill screen with background image and set z-order so it's behind the movie texture
-                            SDK::UCanvasPanelSlot* Slot = static_cast<SDK::UCanvasPanelSlot*>(bgImg->Slot);
-                            Slot->SetAnchors(SDK::FAnchors(SDK::FVector2D(0.00f, 0), SDK::FVector2D(1.00f, 1.00f)));
-                            Slot->SetOffsets(SDK::FMargin(0.00f, 0.00f, 0.00f, 0.00f));
-                            Slot->SetZOrder(-10000);
+                                // Add background image widget as child of root widget
+                                rootWidget->AddChild(bgImg);
 
-                            // Scale movie image to correct aspect ratio
-                            if (fAspectRatio > fNativeAspect) {
-                                UMGMovie->movieImage->SetRenderScale(SDK::FVector2D(1.00f / fAspectMultiplier, 1.00f));
-                            }
-                            else if (fAspectRatio < fNativeAspect) {
-                                UMGMovie->movieImage->SetRenderScale(SDK::FVector2D(1.00f, 1.00f * fAspectMultiplier));
+                                // Fill screen with background image and set z-order so it's behind the movie texture
+                                SDK::UCanvasPanelSlot* Slot = static_cast<SDK::UCanvasPanelSlot*>(bgImg->Slot);
+                                Slot->SetAnchors(SDK::FAnchors(SDK::FVector2D(0.00f, 0), SDK::FVector2D(1.00f, 1.00f)));
+                                Slot->SetOffsets(SDK::FMargin(0.00f, 0.00f, 0.00f, 0.00f));
+                                Slot->SetZOrder(-10000);
+
+                                // Scale movie image to correct aspect ratio
+                                if (fAspectRatio > fNativeAspect) {
+                                    UMGMovie->movieImage->SetRenderScale(SDK::FVector2D(1.00f / fAspectMultiplier, 1.00f));
+                                }
+                                else if (fAspectRatio < fNativeAspect) {
+                                    UMGMovie->movieImage->SetRenderScale(SDK::FVector2D(1.00f, 1.00f * fAspectMultiplier));
+                                }
                             }
                         }
                     }
@@ -418,6 +441,7 @@ DWORD __stdcall Main(void*)
     Logging();
     Configuration();
     UpdateOffsets();
+    IntroSkip();
     CurrentResolution();
     AspectRatioFOV();
     HUD();
