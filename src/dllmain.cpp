@@ -3,6 +3,7 @@
 
 #include "SDK/Engine_classes.hpp"
 #include "SDK/UMG_classes.hpp"
+#include "SDK/movieUMG_classes.hpp"
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
@@ -257,7 +258,8 @@ void AspectRatioFOV()
             static SafetyHookMid AspectRatioMidHook{};
             AspectRatioMidHook = safetyhook::create_mid(AspectRatioFOVScanResult + 0xB,
                 [](SafetyHookContext& ctx) {
-                    ctx.rax = *(uint32_t*)(&fAspectRatio);
+                    if (fAspectRatio != fNativeAspect)
+                        ctx.rax = *(uint32_t*)(&fAspectRatio);
                 });
         }
         else {
@@ -269,42 +271,6 @@ void AspectRatioFOV()
 void HUD()
 {
     if (bFixHUD) {
-        // HUD
-        std::uint8_t* HUDSizeScanResult = Memory::PatternScan(exeModule, "48 8D ?? ?? ?? ?? ?? 44 89 ?? ?? 48 89 ?? ?? ?? 33 ?? 48 8D ?? ?? ?? ?? ?? 44 89 ?? ?? ?? 41 ?? ?? ?? 48 89 ?? ?? ?? E8 ?? ?? ?? ??");
-        if (HUDSizeScanResult) {
-            spdlog::info("HUD: Size: Address is {:s}+{:x}", sExeName.c_str(), HUDSizeScanResult - (std::uint8_t*)exeModule);
-            std::uint8_t* HUDSizeFunction = Memory::GetAbsolute(HUDSizeScanResult + 0x3);
-            spdlog::info("HUD: Size: Function address is {:s}+{:x}", sExeName.c_str(), HUDSizeFunction - (std::uint8_t*)exeModule);
-            if (HUDSizeFunction) {
-                static SafetyHookMid HUDSizeMidHook{};
-                HUDSizeMidHook = safetyhook::create_mid(HUDSizeFunction + 0x7,
-                    [](SafetyHookContext& ctx) {
-                        if (ctx.xmm0.f32[0] == 0.00f && ctx.xmm0.f32[1] == 0.00f && ctx.xmm0.f32[2] == 1.00f && ctx.xmm0.f32[3] == 1.00f) {
-                            SDK::UObject* obj = (SDK::UObject*)ctx.rcx;
-
-                            // Don't centre these HUD elements as they are already centred.
-                            if (obj->GetName().contains("WB_TitleDemo_Root_C") || obj->GetName().contains("WB_Title2_Root_C") || obj->GetName().contains("WBP_Common_Fading_C"))
-                                return;
-
-                            float widthOffset = ((1080.00f * fAspectRatio) - 1920.00f) / 2.00f;
-                            float heightOffset = ((1920.00f / fAspectRatio) - 1080.00f) / 2.00f;
-
-                            if (fAspectRatio > fNativeAspect) {
-                                ctx.xmm0.f32[0] = fHUDWidthOffset / (float)iCurrentResX;
-                                ctx.xmm0.f32[2] = 1.00f - ctx.xmm0.f32[0];
-                            }
-                            else if (fAspectRatio < fNativeAspect) {
-                                ctx.xmm0.f32[1] = fHUDHeightOffset / (float)iCurrentResY;
-                                ctx.xmm0.f32[3] = 1.00f - ctx.xmm0.f32[1];
-                            }
-                        }
-                    });
-            }
-        }
-        else {
-            spdlog::error("HUD: Size: Pattern scan failed.");
-        }  
-
         // Interaction markers
         std::uint8_t* HUDMarkersScanResult = Memory::PatternScan(exeModule, "F3 0F ?? ?? ?? ?? ?? ?? F3 0F ?? ?? ?? ?? ?? ?? F3 0F ?? ?? ?? ?? ?? ?? F3 0F ?? ?? ?? ?? ?? ?? F3 0F ?? ?? ?? ?? ?? ?? 80 ?? ?? ?? ?? ?? 00 75 ??");
         if (HUDMarkersScanResult) {
@@ -312,21 +278,74 @@ void HUD()
             static SafetyHookMid HUDMarkersMidHook{};
             HUDMarkersMidHook = safetyhook::create_mid(HUDMarkersScanResult,
                 [](SafetyHookContext& ctx) {
-                    // Get width and height
-                    int iResX = (int)ctx.rdx & 0xFFFFFFFF;
-                    int iResY = (int)static_cast<uint32_t>(ctx.rdx >> 32);
+                    if (fAspectRatio != fNativeAspect) {
+                        // Get width and height
+                        int iResX = (int)ctx.rdx & 0xFFFFFFFF;
+                        int iResY = (int)static_cast<uint32_t>(ctx.rdx >> 32);
 
-                    // Remove hor/vert offsets
-                    ctx.xmm2.f32[0] = ctx.xmm5.f32[0] = 0.00f;
+                        // Remove hor/vert offsets
+                        ctx.xmm2.f32[0] = ctx.xmm5.f32[0] = 0.00f;
 
-                    // Set width and height
-                    ctx.xmm0.f32[0] = (float)iResX;
-                    ctx.xmm4.f32[0] = (float)iResY;
-
+                        // Set width and height
+                        ctx.xmm0.f32[0] = (float)iResX;
+                        ctx.xmm4.f32[0] = (float)iResY;
+                    }
                 });
         }
         else {
             spdlog::error("HUD: Interaction Markers: Pattern scan failed.");
+        }
+
+        // Movies - ManaComponent::IsPreparing()
+        std::uint8_t* MoviePrepareScanResult = Memory::PatternScan(exeModule, "48 83 ?? ?? ?? ?? ?? 00 75 ?? 32 ?? C3 0F B6 ?? ?? ?? ?? ??");
+        if (MoviePrepareScanResult) {
+            spdlog::info("Movies: Prepare: Address is {:s}+{:x}", sExeName.c_str(), MoviePrepareScanResult - (std::uint8_t*)exeModule);
+            static SafetyHookMid MoviePrepareMidHook{};
+            MoviePrepareMidHook = safetyhook::create_mid(MoviePrepareScanResult,
+                [](SafetyHookContext& ctx) {   
+                    for (int i = 0; i < SDK::UObject::GObjects->Num(); i++) {
+                        SDK::UObject* Obj = SDK::UObject::GObjects->GetByIndex(i);
+
+                        if (!Obj || Obj->IsDefaultObject())
+                            continue;
+
+                        if (Obj->IsA(SDK::UmovieUMG_C::StaticClass())) {
+                            // Assign UMGMovie
+                            SDK::UmovieUMG_C* UMGMovie = (SDK::UmovieUMG_C*)Obj;
+                            spdlog::info("HUD: Movies: Prepare: Movie playback started.");
+
+                            // Get RootWidget
+                            SDK::UPanelWidget* rootWidget = (SDK::UPanelWidget*)UMGMovie->WidgetTree->RootWidget;
+
+                            // Create background image
+                            SDK::UObject* imgObj = SDK::UGameplayStatics::SpawnObject(SDK::UImage::StaticClass(), SDK::UImage::StaticClass()->Outer);
+                            SDK::UImage* bgImg = static_cast<SDK::UImage*>(imgObj);
+
+                            // Set brush to black
+                            bgImg->Brush.TintColor = SDK::FSlateColor(SDK::FLinearColor(0.00f, 0.00f, 0.00f, 1.00f));
+
+                            // Add background image widget as child of root widget
+                            rootWidget->AddChild(bgImg);
+
+                            // Fill screen with background image and set z-order so it's behind the movie texture
+                            SDK::UCanvasPanelSlot* Slot = static_cast<SDK::UCanvasPanelSlot*>(bgImg->Slot);
+                            Slot->SetAnchors(SDK::FAnchors(SDK::FVector2D(0.00f, 0), SDK::FVector2D(1.00f, 1.00f)));
+                            Slot->SetOffsets(SDK::FMargin(0.00f, 0.00f, 0.00f, 0.00f));
+                            Slot->SetZOrder(-10000);
+
+                            // Scale movie image to correct aspect ratio
+                            if (fAspectRatio > fNativeAspect) {
+                                UMGMovie->movieImage->SetRenderScale(SDK::FVector2D(1.00f / fAspectMultiplier, 1.00f));
+                            }
+                            else if (fAspectRatio < fNativeAspect) {
+                                UMGMovie->movieImage->SetRenderScale(SDK::FVector2D(1.00f, 1.00f * fAspectMultiplier));
+                            }
+                        }
+                    }
+                });
+        }
+        else {
+            spdlog::error("HUD: Movies: Prepare: Pattern scan failed.");
         }
     }
 }
