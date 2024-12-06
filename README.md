@@ -12,7 +12,7 @@ This is an ASI plugin for Master Detective Archives: Rain Code Plus that adds ul
 
 ### Ultrawide/narrower
 - Support for any aspect ratio.
-- Centred 16:9 HUD.
+- HUD fixes and a centered HUD option.
 - Correct FOV at any aspect ratio.
 
 ## Installation
