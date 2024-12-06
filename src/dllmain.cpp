@@ -417,6 +417,20 @@ void HUD()
         else {
             spdlog::error("HUD: Movies: Prepare: Pattern scan failed.");
         }
+
+        // Scene change
+        std::uint8_t* SceneChangeScanResult = Memory::PatternScan(exeModule, "48 8B ?? ?? 48 8B ?? E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B ?? ?? 4C 8D ?? ?? 48 ?? ?? ?? 3B ?? ?? 7F ??");
+        if (SceneChangeScanResult) {
+            spdlog::info("HUD: Scene Change: Address is {:s}+{:x}", sExeName.c_str(), SceneChangeScanResult - (std::uint8_t*)exeModule);
+            static SafetyHookMid SceneChangeMidHook{};
+            SceneChangeMidHook = safetyhook::create_mid(SceneChangeScanResult + 0x4,
+                [](SafetyHookContext& ctx) {
+                    ctx.rdx = 0x3f8000003f800000; // 1.00f, 1.00f
+                });
+        }
+        else {
+            spdlog::error("HUD: Scene Change: Pattern scan failed.");
+        }
     }
 }
 
