@@ -48,6 +48,7 @@ float fHUDHeightOffset;
 // Ini variables
 bool bFixAspect;
 bool bFixHUD;
+bool bCenterHUD;
 bool bEnableConsole;
 bool bSkipLogos;
 
@@ -129,12 +130,14 @@ void Configuration()
     inipp::get_value(ini.sections["Developer Console"], "Enabled", bEnableConsole);
     inipp::get_value(ini.sections["Fix Aspect Ratio"], "Enabled", bFixAspect);
     inipp::get_value(ini.sections["Fix HUD"], "Enabled", bFixHUD);
+    inipp::get_value(ini.sections["Fix HUD"], "Centered", bCenterHUD);
 
     // Log ini parse
     spdlog_confparse(bSkipLogos);
     spdlog_confparse(bEnableConsole);
     spdlog_confparse(bFixAspect);
     spdlog_confparse(bFixHUD);
+    spdlog_confparse(bCenterHUD);
     spdlog::info("----------");
 }
 
@@ -325,6 +328,41 @@ void AspectRatioFOV()
 void HUD()
 {
     if (bFixHUD) {
+        if (bCenterHUD) {
+            // HUD size
+            std::uint8_t* HUDSizeScanResult = Memory::PatternScan(exeModule, "48 8D ?? ?? ?? ?? ?? 44 89 ?? ?? 48 89 ?? ?? ?? 33 ?? 48 8D ?? ?? ?? ?? ?? 44 89 ?? ?? ?? 41 ?? ?? ?? 48 89 ?? ?? ?? E8 ?? ?? ?? ??");
+            if (HUDSizeScanResult) {
+                spdlog::info("HUD: Size: Address is {:s}+{:x}", sExeName.c_str(), HUDSizeScanResult - (std::uint8_t*)exeModule);
+                std::uint8_t* HUDSizeFunction = Memory::GetAbsolute(HUDSizeScanResult + 0x3);
+                spdlog::info("HUD: Size: Function address is {:s}+{:x}", sExeName.c_str(), HUDSizeFunction - (std::uint8_t*)exeModule);
+                if (HUDSizeFunction) {
+                    static SafetyHookMid HUDSizeMidHook{};
+                    HUDSizeMidHook = safetyhook::create_mid(HUDSizeFunction + 0x7,
+                        [](SafetyHookContext& ctx) {
+                            if (ctx.xmm0.f32[0] == 0.00f && ctx.xmm0.f32[1] == 0.00f && ctx.xmm0.f32[2] == 1.00f && ctx.xmm0.f32[3] == 1.00f) {
+                                SDK::UObject* obj = (SDK::UObject*)ctx.rcx;
+
+                                // Don't center these HUD elements
+                                if (obj->GetName().contains("movieUMG_C"))
+                                    return;
+
+                                if (fAspectRatio > fNativeAspect) {
+                                    ctx.xmm0.f32[0] = fHUDWidthOffset / (float)iCurrentResX;
+                                    ctx.xmm0.f32[2] = 1.00f - ctx.xmm0.f32[0];
+                                }
+                                else if (fAspectRatio < fNativeAspect) {
+                                    ctx.xmm0.f32[1] = fHUDHeightOffset / (float)iCurrentResY;
+                                    ctx.xmm0.f32[3] = 1.00f - ctx.xmm0.f32[1];
+                                }
+                            }
+                        });
+                }
+            }
+            else {
+                spdlog::error("HUD: Size: Pattern scan failed.");
+            }
+        }
+
         // Interaction markers
         std::uint8_t* HUDMarkersScanResult = Memory::PatternScan(exeModule, "F3 0F ?? ?? ?? ?? ?? ?? F3 0F ?? ?? ?? ?? ?? ?? F3 0F ?? ?? ?? ?? ?? ?? F3 0F ?? ?? ?? ?? ?? ?? F3 0F ?? ?? ?? ?? ?? ?? 80 ?? ?? ?? ?? ?? 00 75 ??");
         if (HUDMarkersScanResult) {
