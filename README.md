@@ -37,6 +37,7 @@ e.g. ("**steamapps\common\MDA - RAIN CODE Plus**" for Steam).
 Please report any issues you see.
 
 ## Credits
+Thanks to Aelzaire for making this fix possible! <br />
 [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) for ASI loading. <br />
 [inipp](https://github.com/mcmtroffaes/inipp) for ini reading. <br />
 [spdlog](https://github.com/gabime/spdlog) for logging. <br />
