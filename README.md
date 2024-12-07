@@ -8,7 +8,6 @@ This is an ASI plugin for Master Detective Archives: Rain Code Plus that adds ul
 ### General
 - Skip intro logos.
 - Enable developer console.
-- Apply a list of console commands on level load.
 
 ### Ultrawide/narrower
 - Support for any aspect ratio.
